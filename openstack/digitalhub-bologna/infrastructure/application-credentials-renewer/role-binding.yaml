@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: patch-secret
+  namespace: digitalhub-bologna
+subjects:
+- kind: ServiceAccount
+  name: openstacka-application-credentials-renewer
+  namespace: digitalhub-bologna
+roleRef:
+  kind: Role
+  name: patch-secret
+  apiGroup: rbac.authorization.k8s.io

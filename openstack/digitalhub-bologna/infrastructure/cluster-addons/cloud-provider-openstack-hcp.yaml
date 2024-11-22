@@ -1,0 +1,39 @@
+apiVersion: addons.cluster.x-k8s.io/v1alpha1
+kind: HelmChartProxy
+metadata:
+  name: cloud-provider-openstack
+spec:
+  clusterSelector:
+    matchLabels:
+      cloud-provider: openstack
+  repoURL: https://kubernetes.github.io/cloud-provider-openstack
+  chartName: openstack-cloud-controller-manager
+  namespace: kube-system
+  options:
+    waitForJobs: true
+    wait: true
+    timeout: 5m
+  valuesTemplate: |
+    controllerExtraArgs: |-
+      - --use-service-account-credentials=false
+    secret:
+      enabled: true
+      create: false
+      name: cloud-config
+    extraVolumes:
+      - secret:
+          secretName: openstack-ca-cert
+        name: ca-certs
+    extraVolumeMounts:
+      - mountPath: /etc/cacert
+        name: ca-certs
+        readOnly: true
+    tolerations:
+      - key: node.cloudprovider.kubernetes.io/uninitialized
+        value: "true"
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/etcd
+        value: "true"
+        effect: NoExecute

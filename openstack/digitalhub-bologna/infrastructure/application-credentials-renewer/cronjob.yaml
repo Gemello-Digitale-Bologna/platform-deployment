@@ -1,0 +1,85 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: openstacka-application-credentials-renewer
+  namespace: digitalhub-bologna
+spec:
+  schedule: "0 */72 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: openstacka-application-credentials-renewer
+          securityContext:
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            runAsNonRoot: true
+          containers:
+          - name: renewer
+            image: ghcr.io/scc-digitalhub/openstack-application-credentials-renewer:1.0.5
+            imagePullPolicy: Always
+            resources:
+              requests:
+                cpu: 100m
+                memory: "64M"
+              limits:
+                cpu: 100m
+                memory: "128M"
+            env:
+              - name: USER_ID
+                valueFrom:
+                  secretKeyRef:
+                    name: openstack-confs
+                    key: userid
+              - name: AUTH_URL
+                valueFrom:
+                  secretKeyRef:
+                    name: openstack-confs
+                    key: authurl
+              - name: FLOATING_NETWORK_ID
+                valueFrom:
+                  secretKeyRef:
+                    name: openstack-confs
+                    key: floatingnetworkid
+              - name: K8S_CONFIG
+                value: "/home/nonroot/config"
+              - name: CA_CERT_PATH
+                value: "/home/nonroot/cacert"
+            volumeMounts:
+            - name: cloud-config
+              mountPath: /home/nonroot/clouds.yaml
+              subPath: clouds.yaml
+            - name: cacert
+              mountPath: /home/nonroot/cacert
+              subPath: cacert
+            - name: k8sconfig
+              mountPath: /home/nonroot/config
+              subPath: config
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - ALL
+          volumes:
+            - name: cloud-config
+              secret:
+                secretName: digitalhub-bologna-cloud-config
+                items:
+                  - key: clouds.yaml
+                    path: clouds.yaml
+            - name: cacert
+              secret:
+                secretName: digitalhub-bologna-cloud-config
+                items:
+                  - key: cacert
+                    path: cacert
+            - name: k8sconfig
+              secret:
+                secretName: digitalhub-bologna-kubeconfig
+                items:
+                  - key: value
+                    path: config
+          restartPolicy: Never
+      backoffLimit: 0

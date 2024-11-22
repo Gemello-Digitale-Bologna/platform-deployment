@@ -1,0 +1,36 @@
+apiVersion: addons.cluster.x-k8s.io/v1alpha1
+kind: HelmChartProxy
+metadata:
+  name: cinder-csi
+spec:
+  clusterSelector:
+    matchLabels:
+      csi: cinder
+  repoURL: https://kubernetes.github.io/cloud-provider-openstack
+  chartName: openstack-cinder-csi
+  namespace: kube-system
+  options:
+    waitForJobs: true
+    wait: true
+    timeout: 5m
+  valuesTemplate: |
+    storageClass:
+      enabled: true
+      delete:
+        isDefault: true
+    secret:
+      enabled: true
+      name: cloud-config
+    csi:
+      plugin: 
+        volumes:
+          - secret:
+              secretName: openstack-ca-cert
+            name: ca-certs
+        volumeMounts:
+          - mountPath: /etc/cacert
+            name: ca-certs
+            readOnly: true
+          - mountPath: /etc/kubernetes/
+            name: cloud-config
+            readOnly: true

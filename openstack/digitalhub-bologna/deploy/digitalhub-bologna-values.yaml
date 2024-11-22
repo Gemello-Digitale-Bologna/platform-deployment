@@ -1,0 +1,453 @@
+global:
+  cleanup:
+    persistentVolumeClaim: true
+    ingress: true
+  service:
+    type: &serviceType "ClusterIP"
+  registry:
+    url: registry.<your-domainu3e
+    username: ""
+    password: ""
+    email: "admin@<your-domain>"
+    secretName: "registry-credentials"
+  basicAuth:
+    enabled: false
+    username: ""
+    password: ""
+    secretName: "basic-auth"
+  nuclio:
+    dashboard:
+      nodePort: ""
+  externalHostAddress: &globalExternalUrl ""
+
+docker-registry: 
+  enabled: true
+  fullnameOverride: digitalhub-docker-registry
+  className: nginx
+  service:
+    type: *serviceType
+    nodePort: ""
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/auth-type: basic
+      nginx.ingress.kubernetes.io/auth-secret: basic-auth
+      nginx.ingress.kubernetes.io/auth-realm: 'Registry realm'
+      nginx.ingress.kubernetes.io/proxy-body-size: "0"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    path: /
+    hosts:
+      - registry.<your-domain>
+    tls:
+      - secretName: digitalhub-bologna-wildcard
+        hosts: 
+          - registry.<your-domain>
+  persistence:
+    accessMode: 'ReadWriteOnce'
+    enabled: true
+    size: 128Gi
+  updateStrategy:
+    type: Recreate
+
+mlrun-ce: 
+  enabled: true
+  nuclio:
+    fullnameOverride: nuclio
+    controller:
+      enabled: true
+    dashboard:
+      enabled: true
+      containerBuilderKind: kaniko
+      ingress:
+        enabled: true
+        ingressClassName: "nginx"
+        annotations:
+          nginx.ingress.kubernetes.io/auth-type: basic
+          nginx.ingress.kubernetes.io/auth-secret: basic-auth
+          nginx.ingress.kubernetes.io/auth-realm: 'Registry realm'
+        hosts: 
+          - nuclio.<your-domain>
+        tls:
+          - secretName: digitalhub-bologna-wildcard
+            hosts:
+              - nuclio.<your-domain>
+    rbac:
+      create: true
+      crdAccessMode: namespaced
+    crd:
+      create: true
+    platform:
+      platform:
+        ingressConfig:
+          tlsSecret: "digitalhub-bologna-wildcard"
+      logger:
+        sinks:
+          myStdoutLoggerSink:
+            kind: stdout
+            attributes:
+              encoding: console
+              timeFieldName: time
+              timeFieldEncoding: iso8601
+        system:
+        - level: debug
+          sink: myStdoutLoggerSink
+        functions:
+        - level: debug
+          sink: myStdoutLoggerSink
+  mlrun:
+    storage: filesystem
+    fullnameOverride: mlrun
+    nuclio:
+      mode: enabled
+      uiURL: "https://nuclio.<your-domain>/"
+    rbac:
+      create: true
+    v3io:
+      enabled: false
+    api:
+      fullnameOverride: mlrun-api
+      service:
+        type: *serviceType
+      ingress:
+        enabled: true
+        ingressClassName: "nginx"
+        hosts:
+          - host: mlrun-api.<your-domain>
+            paths: 
+              - pathType: ImplementationSpecific
+                path: /
+        tls:
+          - secretName: digitalhub-bologna-wildcard
+            hosts:
+              - mlrun-api.<your-domain>
+      volumes:
+        storageOverride:
+          persistentVolumeClaim:
+            claimName: mlrun-api-pvc
+      persistence:
+        enabled: true
+        existingClaim:
+        storageClass:
+        accessMode: "ReadWriteOnce"
+        size: "8Gi"
+        # annotations:
+        #   helm.sh/resource-policy: "keep"
+      envFrom:
+        - configMapRef:
+            name: mlrun-common-env
+        - configMapRef:
+            name: mlrun-pipelines-config
+            optional: true
+        - configMapRef:
+            name: mlrun-spark-config
+            optional: true
+        - configMapRef:
+            name: mlrun-override-env
+            optional: true
+      extraPersistentVolumeMounts: ~
+    ui:
+      fullnameOverride: mlrun-ui
+      service:
+        type: *serviceType
+      ingress:
+        enabled: true
+        ingressClassName: "nginx"
+        annotations: 
+          nginx.ingress.kubernetes.io/auth-type: basic
+          nginx.ingress.kubernetes.io/auth-secret: basic-auth
+          nginx.ingress.kubernetes.io/auth-realm: 'Registry realm'
+        hosts:
+          - host: mlrun.<your-domain>
+            paths: 
+              - pathType: ImplementationSpecific
+                path: /
+        tls:
+          - secretName: digitalhub-bologna-wildcard
+            hosts:
+              - mlrun.<your-domain>
+    db:
+      name: db
+      fullnameOverride: mlrun-db
+      securityContext: 
+        runAsUser: 999
+      podSecurityContext:
+        runAsUser: 999
+        fsGroup: 999    
+      volumes:
+        storageOverride:
+          persistentVolumeClaim:
+            claimName: mlrun-db-pvc
+      persistence:
+        enabled: true
+        existingClaim:
+        storageClass:
+        accessMode: "ReadWriteOnce"
+        size: "8Gi"
+        # annotations:
+        #   helm.sh/resource-policy: "keep"
+    httpDB:
+      dbType: mysql
+      dirPath: "/mlrun/db"
+      dsn: mysql+pymysql://root@mlrun-db:3306/mlrun
+      oldDsn: sqlite:////mlrun/db/mlrun.db?check_same_thread=false
+    ce:
+      mode: full
+  jupyterNotebook:
+    enabled: false
+    persistence:
+      enabled: false
+  mpi-operator:
+    fullnameOverride: mpi-operator
+    crd:
+      create: true
+    rbac:
+      clusterResources:
+        create: true
+      namespaced:
+        create: true
+    deployment:
+      create: true
+  minio:
+    enabled: true
+    rootUser: minio
+    rootPassword: 
+    mode: standalone
+    replicas: 1
+    resources:
+      requests:
+        memory: 0.5Gi
+    service:
+      type: *serviceType
+    consoleService:
+      type: *serviceType
+    ingress:
+      enabled: true
+      ingressClassName: "nginx"
+      path: /
+      annotations:
+        nginx.ingress.kubernetes.io/proxy-body-size: "0"
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+      hosts:
+        - minio-api.<your-domain>
+      tls:
+        - secretName: digitalhub-bologna-wildcard
+          hosts:
+            - minio-api.<your-domain>
+    consoleIngress:
+      enabled: true
+      ingressClassName: "nginx"
+      annotations:
+        nginx.ingress.kubernetes.io/proxy-body-size: "0"
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+      path: /
+      hosts:
+        - minio.<your-domain>
+      tls:
+        - secretName: digitalhub-bologna-wildcard
+          hosts:
+            - minio.<your-domain>
+    persistence:
+      enabled: true
+      size: 1500Gi
+    fullnameOverride: minio
+    buckets:
+      - name: datalake
+        policy: none
+        purge: false
+  spark-operator:
+    enabled: true
+    fullnameOverride: spark-operator
+    webhook:
+      enable: true
+    serviceAccounts:
+      spark:
+        name: "sparkapp"
+  pipelines:
+    enabled: true
+    name: pipelines
+    persistence:
+      enabled: true
+      existingClaim:
+      storageClass:
+      accessMode: "ReadWriteOnce"
+      size: "128Gi"
+      # annotations:
+      #   helm.sh/resource-policy: "keep"
+    db:
+      username: root
+    ui:
+      service:
+        type: *serviceType
+      ingress:
+        enabled: true
+        ingressClassName: "nginx"
+        annotations:
+          nginx.ingress.kubernetes.io/auth-type: basic
+          nginx.ingress.kubernetes.io/auth-secret: basic-auth
+          nginx.ingress.kubernetes.io/auth-realm: 'Registry realm'
+        hosts:
+          - host: kubeflow-ui.<your-domain>
+            paths: 
+              - pathType: ImplementationSpecific
+                path: /
+        tls:
+        - secretName: digitalhub-bologna-wildcard
+          hosts:
+            - kubeflow-ui.<your-domain>
+    minio:
+      enabled: true
+      accessKey: "minio"
+      secretKey: ""
+      endpoint: "minio"
+      endpointPort: "9000"
+      bucket: "datalake"
+  kube-prometheus-stack:
+    enabled: false
+
+coder: 
+  enabled: true
+  externalHostAddress: coder.<your-domain>
+  username: test
+  password: 
+  email: admin@<your-domain>
+  customCoderTemplates:
+    - name: jupyter
+      nodePort: "30040"
+      iconUrl: https://upload.wikimedia.org/wikipedia/commons/thumb/3/38/Jupyter_logo.svg/1200px-Jupyter_logo.svg.png
+    - name: dremio
+      nodePort: "30120"
+      iconUrl: https://cdn.icon-icons.com/icons2/2699/PNG/512/dremio_logo_icon_168234.png
+    - name: sqlpad
+      nodePort: "30140"
+      iconUrl: https://i.ibb.co/TrBDsZM/sqlpad.png
+    - name: grafana
+      nodePort: "30130"
+      iconUrl: https://cdn.icon-icons.com/icons2/2699/PNG/512/grafana_logo_icon_171048.png
+    - name: dashboard
+      nodePort: "30110"
+      iconUrl: https://svgshare.com/i/u5R.svg
+  coder:
+    image:
+      tag: v2.1.5
+    ingress:
+      enable: true
+      className: nginx
+      annotations:
+        nginx.ingress.kubernetes.io/proxy-body-size: "0"
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+      host: coder.<your-domain>
+      wildcardHost: "*.coder.<your-domain>"
+      tls:
+        enable: true
+        secretName: digitalhub-bologna-wildcard
+        wildcardSecretName: digitalhub-bologna-wildcard
+    service:
+      type: *serviceType
+      httpNodePort: ""
+
+postgres-operator: 
+  enabled: true
+
+ext-postgres-operator:
+  enabled: true
+  postgres:
+    host: database-postgres-cluster
+    user: ""
+    password: ""
+    uri_args: " "
+    cloud_provider: " "
+    default_database: "postgres"
+  postgresCredsExistingSecrets:
+    username:
+      secretName: "digitalhubadmin.database-postgres-cluster.credentials.postgresql.acid.zalan.do" 
+      secretKey: "username"
+    password:
+      secretName: "digitalhubadmin.database-postgres-cluster.credentials.postgresql.acid.zalan.do" 
+      secretKey: "password"
+
+postgrest-operator:
+  enabled: true
+  postgres:
+    host: database-postgres-cluster
+    port: 5432
+    uri_args: "sslmode=require"
+    default_database: "digitalhub"
+  postgresCredsExistingSecrets:
+    username:
+      secretName: "digitalhub-owner-user.database-postgres-cluster.credentials.postgresql.acid.zalan.do" 
+      secretKey: "username"
+    password:
+      secretName: "digitalhub-owner-user.database-postgres-cluster.credentials.postgresql.acid.zalan.do" 
+      secretKey: "password"
+
+custom-resource-manager:
+  enabled: true
+  service:
+    type: *serviceType
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      nginx.ingress.kubernetes.io/auth-type: basic
+      nginx.ingress.kubernetes.io/auth-secret: basic-auth
+      nginx.ingress.kubernetes.io/auth-realm: 'Registry realm'
+    hosts:
+      - host: krm.<your-domain>
+        paths: 
+          - pathType: ImplementationSpecific
+            path: /
+    tls:
+    - secretName: digitalhub-bologna-wildcard
+      hosts:
+        - krm.<your-domain>
+
+grafana:
+  enabled: true
+  adminPassword: 
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts: 
+      - dashboard.<your-domain>
+    path: /
+    tls:
+      - hosts:
+        - "dashboard.<your-domain>"
+        secretName: digitalhub-bologna-wildcard
+core:
+  enabled: true
+  minio:
+    endpoint: "minio"
+    endpointPort: "9000"
+  service:
+    type: *serviceType
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      nginx.ingress.kubernetes.io/auth-type: basic
+      nginx.ingress.kubernetes.io/auth-secret: basic-auth
+      nginx.ingress.kubernetes.io/auth-realm: 'Registry realm'
+    hosts:
+      - host: core.<your-domain>
+        paths: 
+          - pathType: ImplementationSpecific
+            path: /
+    tls:
+    - secretName: digitalhub-bologna-wildcard
+      hosts:
+        - core.<your-domain>
+
+apigw-operator:
+  deployment:
+    tls:
+      enabled: true
+      wildcardCertSecretName: "digitalhub-bologna-wildcard"
+
+rabbitmq-cluster-operator:
+  enabled: false

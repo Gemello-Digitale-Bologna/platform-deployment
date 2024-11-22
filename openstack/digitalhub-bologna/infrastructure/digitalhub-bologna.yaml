@@ -1,0 +1,176 @@
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+kind: KubeadmConfigTemplate
+metadata:
+  name: digitalhub-bologna-md-0
+  namespace: digitalhub-bologna
+spec:
+  template:
+    spec:
+      files: []
+      joinConfiguration:
+        nodeRegistration:
+          kubeletExtraArgs:
+            cloud-provider: external
+            provider-id: openstack:///'{{ instance_id }}'
+          name: '{{ local_hostname }}'
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: digitalhub-bologna
+  namespace: digitalhub-bologna
+  labels:
+    app: digitalhub
+    env: bologna
+    cni: cilium
+    cloud-provider: openstack
+    csi: cinder
+    ingress-controller: ingress-nginx
+    monitoring: enabled
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+      - 192.168.0.0/16
+    serviceDomain: cluster.local
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: KubeadmControlPlane
+    name: digitalhub-bologna-control-plane
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1alpha6
+    kind: OpenStackCluster
+    name: digitalhub-bologna
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachineDeployment
+metadata:
+  name: digitalhub-bologna-md-0
+  namespace: digitalhub-bologna
+spec:
+  clusterName: digitalhub-bologna
+  replicas: 4
+  selector:
+    matchLabels: null
+  template:
+    spec:
+      bootstrap:
+        configRef:
+          apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+          kind: KubeadmConfigTemplate
+          name: digitalhub-bologna-md-0
+      clusterName: digitalhub-bologna
+      failureDomain: nova
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1alpha6
+        kind: OpenStackMachineTemplate
+        name: digitalhub-bologna-md-0
+      version: v1.28.2
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: KubeadmControlPlane
+metadata:
+  name: digitalhub-bologna-control-plane
+  namespace: digitalhub-bologna
+spec:
+  kubeadmConfigSpec:
+    clusterConfiguration:
+      apiServer:
+        extraArgs:
+          cloud-provider: external
+      controllerManager:
+        extraArgs:
+          bind-address: "0.0.0.0"
+          cloud-provider: external
+      scheduler:
+        extraArgs:
+          bind-address: "0.0.0.0"
+      etcd:
+        local:
+          extraArgs:
+            listen-metrics-urls: http://127.0.0.1:2381,https://0.0.0.0:2382
+    initConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+          cloud-provider: external
+          provider-id: openstack:///'{{ instance_id }}'
+        name: '{{ local_hostname }}'
+      skipPhases:
+        - addon/kube-proxy
+    joinConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+          cloud-provider: external
+          provider-id: openstack:///'{{ instance_id }}'
+        name: '{{ local_hostname }}'
+    postKubeadmCommands: 
+      - kubectl --kubeconfig /etc/kubernetes/admin.conf create ns monitoring
+      - kubectl --kubeconfig /etc/kubernetes/admin.conf -n monitoring create secret generic etcd-client --from-file=/etc/kubernetes/pki/etcd/ca.crt --from-file=/etc/kubernetes/pki/etcd/healthcheck-client.crt --from-file=/etc/kubernetes/pki/etcd/healthcheck-client.key
+  machineTemplate:
+    infrastructureRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1alpha7
+      kind: OpenStackMachineTemplate
+      name: digitalhub-bologna-control-plane
+  replicas: 3
+  version: v1.28.2
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha7
+kind: OpenStackCluster
+metadata:
+  name: digitalhub-bologna
+  namespace: digitalhub-bologna
+spec:
+  apiServerLoadBalancer:
+    enabled: true
+  router: 
+    id: 42d29e93-621d-4012-b579-140ef991d0cc
+  cloudName: openstack
+  dnsNameservers:
+  - 8.8.8.8
+  externalNetworkId: 238b54cc-307e-4bfe-b849-7b09861e306f
+  identityRef:
+    kind: Secret
+    name: digitalhub-bologna-cloud-config
+  managedSecurityGroups: true
+  allowAllInClusterTraffic: true
+  nodeCidr: 10.6.0.0/24
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha7
+kind: OpenStackMachineTemplate
+metadata:
+  name: digitalhub-bologna-control-plane
+  namespace: digitalhub-bologna
+spec:
+  template:
+    spec:
+      cloudName: openstack
+      flavor: fl.ada.xs
+      rootVolume:
+        diskSize: 64
+        volumeType: __DEFAULT__
+        availabilityZone: nova
+      identityRef:
+        kind: Secret
+        name: digitalhub-bologna-cloud-config
+      image: ubuntu-2204-kube-v1.28.2
+      sshKeyName: k8s-keypair
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha7
+kind: OpenStackMachineTemplate
+metadata:
+  name: digitalhub-bologna-md-0
+  namespace: digitalhub-bologna
+spec:
+  template:
+    spec:
+      cloudName: openstack
+      flavor: fl.ada.s
+      rootVolume:
+        diskSize: 128
+        volumeType: __DEFAULT__
+        availabilityZone: nova
+      identityRef:
+        kind: Secret
+        name: digitalhub-bologna-cloud-config
+      image: ubuntu-2204-kube-v1.28.2
+      sshKeyName: k8s-keypair
